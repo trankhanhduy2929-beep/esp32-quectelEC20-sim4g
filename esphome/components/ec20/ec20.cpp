@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <netinet/tcp.h>
 
 namespace esphome::ec20 {
 
@@ -93,15 +94,20 @@ void EC20Component::task_loop_() {
       continue;
     }
 
-    const uint32_t now = millis();
-    if (this->force_at_ || now - this->last_at_ >= 5000) {
+    if (this->force_at_) {
       this->force_at_ = false;
       this->send_at_();
-      this->last_at_ = now;
+      this->last_at_ = millis();
       vTaskDelay(pdMS_TO_TICKS(2000));
+      if (this->tcp_active_) {
+        continue;
+      }
       const bool ok = this->response_has_ok_();
       this->store_response_();
       if (!ok) {
+        if (this->tcp_active_) {
+          continue;
+        }
         ESP_LOGW(TAG, "No OK on interface %u, trying next", this->at_interfaces_[this->at_index_]);
         this->close_device_();
         this->at_index_ = (this->at_index_ + 1) % this->at_interfaces_.size();
@@ -173,6 +179,7 @@ bool EC20Component::send_at_() {
     this->rx_buffer_.clear();
   }
   const uint8_t command[] = {'A', 'T', '\r', '\n'};
+  std::lock_guard<std::mutex> tx_lock(this->tx_mutex_);
   const esp_err_t err = cdc_acm_host_data_tx_blocking(this->handle_, command, sizeof(command), 1000);
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "AT TX failed: %s", esp_err_to_name(err));
@@ -276,6 +283,8 @@ void EC20Component::handle_tcp_() {
     const int fd = ::accept(this->listen_fd_, reinterpret_cast<struct sockaddr *>(&peer), &peer_len);
     if (fd >= 0) {
       ::fcntl(fd, F_SETFL, O_NONBLOCK);
+      int one = 1;
+      ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
       this->client_fd_ = fd;
       this->tcp_active_ = true;
       {
@@ -296,6 +305,11 @@ void EC20Component::handle_tcp_() {
   {
     std::lock_guard<std::mutex> lock(this->rx_mutex_);
     from_ec20.swap(this->rx_buffer_);
+  }
+  if (!from_ec20.empty() && this->at_response_sensor_ != nullptr) {
+    std::lock_guard<std::mutex> lock(this->pending_mutex_);
+    this->pending_response_ = from_ec20;
+    this->has_pending_response_ = true;
   }
   size_t offset = 0;
   while (offset < from_ec20.size()) {
@@ -322,6 +336,7 @@ bool EC20Component::send_raw_(const uint8_t *data, size_t len) {
   if (this->handle_ == nullptr) {
     return false;
   }
+  std::lock_guard<std::mutex> tx_lock(this->tx_mutex_);
   return cdc_acm_host_data_tx_blocking(this->handle_, data, len, 1000) == ESP_OK;
 }
 

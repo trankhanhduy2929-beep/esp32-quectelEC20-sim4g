@@ -57,6 +57,7 @@ class EC20Component : public Component {
   std::string rx_buffer_;
   std::mutex pending_mutex_;
   std::string pending_response_;
+  std::mutex tx_mutex_;
 
   uint32_t last_at_{0};
   std::vector<uint8_t> at_interfaces_{2, 3, 0, 1, 4};
