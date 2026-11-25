@@ -1,0 +1,266 @@
+substitutions:
+  device_name: esp32-s3-speaker
+  friendly_name: ESP32-S3 Speaker
+  media_player_name: Loa ESP32-S3
+  ap_ssid: "EC20 SIM SPEAKER ESP32"
+  ap_password: "12345678"
+  tts_entity: tts.edge_tts
+  tts_media_player: media_player.esp32_s3_speaker_loa_esp32_s3
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  baud_rate: 115200
+  hardware_uart: UART0
+  level: DEBUG
+
+ec20:
+  id: ec20_modem
+  port: 9000
+  at_response:
+    name: "EC20 AT Response"
+    id: ec20_at_response
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  id: wifi_id
+  ap:
+    ssid: "${ap_ssid}"
+    password: "${ap_password}"
+    ap_timeout: 30s
+    channel: 6
+  on_connect:
+    - script.execute: announce_wifi
+
+script:
+  - id: announce_wifi
+    mode: single
+    then:
+      - wait_until:
+          condition:
+            api.connected:
+          timeout: 30s
+      - if:
+          condition:
+            api.connected:
+          then:
+            - delay: 5s
+            - logger.log: "WiFi connected, announcing IP"
+            - homeassistant.action:
+                action: tts.speak
+                data:
+                  entity_id: ${tts_entity}
+                  media_player_entity_id: ${tts_media_player}
+                  language: vi-VN
+                data_template:
+                  message: !lambda 'return std::string("Kết nối WiFi thành công. Địa chỉ IP là ") + id(wifi_ip).state;'
+                on_error:
+                  - logger.log: "WiFi announcement TTS failed"
+
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+  sorting_groups:
+    - id: group_wifi
+      name: "WiFi"
+      sorting_weight: 10
+    - id: group_info
+      name: "Thông tin"
+      sorting_weight: 20
+    - id: group_system
+      name: "Hệ thống"
+      sorting_weight: 30
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 320ms
+    window: 30ms
+    active: true
+
+bluetooth_proxy:
+  active: true
+  connection_slots: 3
+
+i2s_audio:
+  i2s_lrclk_pin: GPIO16
+  i2s_bclk_pin: GPIO15
+
+speaker:
+  - platform: i2s_audio
+    id: i2s_out
+    dac_type: external
+    i2s_dout_pin: GPIO17
+    channel: mono
+    sample_rate: 48000
+    bits_per_sample: 16bit
+
+  - platform: mixer
+    id: mixer_out
+    output_speaker: i2s_out
+    source_speakers:
+      - id: media_mixer_in
+      - id: announce_mixer_in
+
+  - platform: resampler
+    id: media_resampled
+    output_speaker: media_mixer_in
+
+  - platform: resampler
+    id: announce_resampled
+    output_speaker: announce_mixer_in
+
+media_player:
+  - platform: speaker
+    name: "${media_player_name}"
+    id: media_player_out
+    media_pipeline:
+      speaker: media_resampled
+      num_channels: 2
+      sample_rate: 48000
+    announcement_pipeline:
+      speaker: announce_resampled
+      num_channels: 1
+      sample_rate: 48000
+
+text:
+  - platform: template
+    name: "WiFi SSID"
+    id: wifi_ssid
+    optimistic: true
+    restore_value: true
+    mode: text
+    max_length: 32
+    web_server:
+      sorting_group_id: group_wifi
+
+  - platform: template
+    name: "WiFi Password"
+    id: wifi_password
+    optimistic: true
+    restore_value: false
+    mode: password
+    max_length: 64
+    web_server:
+      sorting_group_id: group_wifi
+
+button:
+  - platform: template
+    name: "Kết nối WiFi"
+    id: wifi_connect_button
+    icon: mdi:wifi
+    web_server:
+      sorting_group_id: group_wifi
+    on_press:
+      - wifi.configure:
+          ssid: !lambda 'return id(wifi_ssid).state;'
+          password: !lambda 'return id(wifi_password).state;'
+          save: true
+          timeout: 30s
+          on_connect:
+            - logger.log: "WiFi connected"
+          on_error:
+            - logger.log: "WiFi connection failed"
+
+  - platform: factory_reset
+    name: "Xóa WiFi và khởi động lại"
+    id: wifi_reset_button
+    web_server:
+      sorting_group_id: group_wifi
+
+  - platform: restart
+    name: "Khởi động lại"
+    web_server:
+      sorting_group_id: group_system
+
+  - platform: template
+    name: "EC20 Test AT"
+    id: ec20_test_at
+    icon: mdi:sim
+    web_server:
+      sorting_group_id: group_system
+    on_press:
+      - lambda: 'id(ec20_modem).test_at();'
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    id: boot_button
+    internal: true
+    filters:
+      - delayed_on: 30ms
+    on_multi_click:
+      - timing:
+          - ON for at least 5s
+        then:
+          - logger.log: "BOOT held 5s: factory reset"
+          - button.press: wifi_reset_button
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+    web_server:
+      sorting_group_id: group_info
+
+  - platform: uptime
+    name: "Uptime"
+    web_server:
+      sorting_group_id: group_info
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP"
+      id: wifi_ip
+      web_server:
+        sorting_group_id: group_info
+    ssid:
+      name: "SSID"
+      web_server:
+        sorting_group_id: group_info
+    bssid:
+      name: "BSSID"
+      web_server:
+        sorting_group_id: group_info
+    mac_address:
+      name: "MAC"
+      web_server:
+        sorting_group_id: group_info
+    dns_address:
+      name: "DNS"
+      web_server:
+        sorting_group_id: group_info
+
+  - platform: version
+    name: "ESPHome Version"
+    web_server:
+      sorting_group_id: group_info
