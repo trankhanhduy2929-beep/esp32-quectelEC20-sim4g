@@ -81,6 +81,7 @@ void EC20Component::task_loop_() {
       }
       this->configure_device_();
       this->last_at_ = 0;
+      this->force_at_ = true;
     }
 
     if (this->disconnected_) {
@@ -114,6 +115,22 @@ void EC20Component::task_loop_() {
         vTaskDelay(pdMS_TO_TICKS(500));
       }
     } else {
+      const uint32_t now = millis();
+      if (now - this->last_at_ >= 20000) {
+        this->last_at_ = now;
+        this->send_at_();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (this->tcp_active_) {
+          continue;
+        }
+        if (!this->response_has_ok_()) {
+          ESP_LOGW(TAG, "Idle AT keepalive failed on interface %u", this->at_interfaces_[this->at_index_]);
+        }
+        {
+          std::lock_guard<std::mutex> lock(this->rx_mutex_);
+          this->rx_buffer_.clear();
+        }
+      }
       vTaskDelay(pdMS_TO_TICKS(100));
     }
   }
@@ -167,6 +184,13 @@ bool EC20Component::configure_device_() {
   }
 
   vTaskDelay(pdMS_TO_TICKS(300));
+
+  {
+    const uint8_t no_sleep[] = {'A', 'T', '+', 'Q', 'S', 'C', 'L', 'K', '=', '0', '\r'};
+    std::lock_guard<std::mutex> tx_lock(this->tx_mutex_);
+    cdc_acm_host_data_tx_blocking(this->handle_, no_sleep, sizeof(no_sleep), 500);
+  }
+  vTaskDelay(pdMS_TO_TICKS(200));
   return true;
 }
 
