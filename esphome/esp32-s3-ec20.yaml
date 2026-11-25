@@ -49,15 +49,12 @@ api:
 ota:
   - platform: esphome
 
+# IP tĩnh (tắt DHCP): comment CẢ 2 dòng packages dưới đây rồi build/OTA để quay lại DHCP.
+packages:
+  static_ip: !include packages/static-ip.yaml
+
 wifi:
   id: wifi_id
-  # IP tĩnh, tắt DHCP. Comment khối manual_ip để quay lại DHCP.
-  manual_ip:
-    static_ip: ${static_ip}
-    gateway: ${gateway}
-    subnet: ${subnet}
-    dns1: ${dns1}
-    dns2: ${dns2}
   ap:
     ssid: "${ap_ssid}"
     password: "${ap_password}"
