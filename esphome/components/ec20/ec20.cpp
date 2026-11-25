@@ -207,9 +207,20 @@ void EC20Component::store_response_() {
     ESP_LOGW(TAG, "No response to AT");
     return;
   }
+  std::string clean;
+  clean.reserve(response.size());
+  for (char c : response) {
+    const uint8_t u = static_cast<uint8_t>(c);
+    if (c == '\n' || c == '\t' || (u >= 0x20 && u < 0x7F)) {
+      clean.push_back(c);
+    }
+  }
+  if (clean.size() > 200) {
+    clean.resize(200);
+  }
   {
     std::lock_guard<std::mutex> lock(this->pending_mutex_);
-    this->pending_response_ = response;
+    this->pending_response_ = std::move(clean);
     this->has_pending_response_ = true;
   }
 }
@@ -305,11 +316,6 @@ void EC20Component::handle_tcp_() {
   {
     std::lock_guard<std::mutex> lock(this->rx_mutex_);
     from_ec20.swap(this->rx_buffer_);
-  }
-  if (!from_ec20.empty() && this->at_response_sensor_ != nullptr) {
-    std::lock_guard<std::mutex> lock(this->pending_mutex_);
-    this->pending_response_ = from_ec20;
-    this->has_pending_response_ = true;
   }
   size_t offset = 0;
   while (offset < from_ec20.size()) {
