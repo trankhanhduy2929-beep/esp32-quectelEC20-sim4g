@@ -142,20 +142,20 @@ Vào nhóm **WiFi** trên web UI:
 ## Home Assistant
 
 1. Settings → Devices & Services → Add Integration → **ESPHome**.
-2. Nhập IP thiết bị (hoặc để tự phát hiện).
+2. Nhập IP thiết bị (hoặc để tự phát hiện). Firmware v0.1.13 không dùng encryption key nên không cần nhập khóa.
 3. Các entity có sẵn: media player, WiFi signal, uptime, IP/SSID/MAC, các nút WiFi/restart, **EC20 Test AT**, text sensor **EC20 AT Response**.
-4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**; v0.1.10 bổ sung quét/chọn WiFi trên web UI; v0.1.11 thêm watchdog tự phục hồi WiFi.
+4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**; v0.1.10 bổ sung quét/chọn WiFi trên web UI; v0.1.11 thêm watchdog tự phục hồi WiFi; v0.1.12 thêm giám sát AT và tự phục hồi EC20; v0.1.13 tắt API encryption.
 5. GNSS cần anten GPS gắn vào EC20; không có anten sẽ báo `0` vệ tinh và `Không có fix`.
 
 ## Bảo mật
 
-Từ firmware v0.1.9, API dùng Noise encryption; web UI không còn yêu cầu user/password, chỉ nên dùng trong LAN tin cậy. Khóa API nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
+Từ firmware v0.1.13, API ESPHome không dùng encryption key để thuận tiện thêm vào Home Assistant. Chỉ chạy thiết bị trong LAN tin cậy và không mở cổng API/OTA ra Internet. Nếu cần bật lại Noise encryption, thêm khóa vào `secrets.yaml` và cấu hình lại tích hợp ESPHome trong Home Assistant:
 
 ```yaml
-api_encryption_key: "<32-byte base64>"
+api:
+  encryption:
+    key: !secret api_encryption_key
 ```
-
-Khi đổi `api_encryption_key`, phải vào Home Assistant → ESPHome → **Reconfigure** và nhập khóa mới.
 
 ## Reset EC20 từ xa (tùy chọn)
 
