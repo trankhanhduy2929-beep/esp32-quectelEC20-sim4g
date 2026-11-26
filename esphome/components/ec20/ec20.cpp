@@ -44,6 +44,9 @@ void EC20Component::loop() {
   usb_host_lib_handle_events(0, &event_flags);
 
   this->ensure_listener_();
+  if (this->disconnected_ && this->client_fd_ >= 0) {
+    this->close_client_();
+  }
   this->handle_tcp_();
 
   if (this->has_pending_response_) {
@@ -113,6 +116,8 @@ void EC20Component::task_loop_() {
         this->close_device_();
         this->at_index_ = (this->at_index_ + 1) % this->at_interfaces_.size();
         vTaskDelay(pdMS_TO_TICKS(500));
+      } else {
+        this->keepalive_failures_ = 0;
       }
     } else {
       const uint32_t now = millis();
@@ -124,7 +129,15 @@ void EC20Component::task_loop_() {
           continue;
         }
         if (!this->response_has_ok_()) {
-          ESP_LOGW(TAG, "Idle AT keepalive failed on interface %u", this->at_interfaces_[this->at_index_]);
+          this->keepalive_failures_++;
+          ESP_LOGW(TAG, "Idle AT keepalive failed (%d/3) on interface %u", this->keepalive_failures_,
+                   this->at_interfaces_[this->at_index_]);
+          if (this->keepalive_failures_ >= 3) {
+            this->keepalive_failures_ = 0;
+            this->force_at_ = true;
+          }
+        } else {
+          this->keepalive_failures_ = 0;
         }
         {
           std::lock_guard<std::mutex> lock(this->rx_mutex_);
@@ -258,7 +271,7 @@ bool EC20Component::data_cb_(const uint8_t *data, size_t len, void *arg) {
       self->rx_buffer_.erase(0, self->rx_buffer_.size() - 2048);
     }
   }
-  ESP_LOGD(TAG, "RX: %.*s", static_cast<int>(len), reinterpret_cast<const char *>(data));
+  ESP_LOGV(TAG, "RX: %.*s", static_cast<int>(len), reinterpret_cast<const char *>(data));
   return true;
 }
 
@@ -344,7 +357,14 @@ void EC20Component::handle_tcp_() {
   size_t offset = 0;
   while (offset < from_ec20.size()) {
     const ssize_t sent = ::send(this->client_fd_, from_ec20.data() + offset, from_ec20.size() - offset, 0);
-    if (sent <= 0) {
+    if (sent < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;
+      }
+      this->close_client_();
+      return;
+    }
+    if (sent == 0) {
       this->close_client_();
       return;
     }

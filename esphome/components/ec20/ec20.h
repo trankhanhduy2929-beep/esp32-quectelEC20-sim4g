@@ -60,6 +60,7 @@ class EC20Component : public Component {
   std::mutex tx_mutex_;
 
   uint32_t last_at_{0};
+  int keepalive_failures_{0};
   std::vector<uint8_t> at_interfaces_{2, 3, 0, 1, 4};
   size_t at_index_{0};
   uint16_t port_{9000};
