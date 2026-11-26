@@ -11,7 +11,7 @@ substitutions:
   subnet: "255.255.255.0"
   dns1: "116.97.90.124"
   dns2: "116.97.90.127"
-  firmware_version: "0.1.6"
+  firmware_version: "0.1.7"
 
 esphome:
   name: ${device_name}
@@ -48,6 +48,52 @@ ec20:
     web_server:
       sorting_group_id: group_ec20
       sorting_weight: 10
+  usb_connected:
+    name: "EC20 USB"
+    web_server:
+      sorting_group_id: group_ec20
+      sorting_weight: 30
+  tcp_connected:
+    name: "Cầu TCP"
+    web_server:
+      sorting_group_id: group_ec20
+      sorting_weight: 40
+  reconnects:
+    name: "Mở lại modem"
+    web_server:
+      sorting_group_id: group_ec20
+      sorting_weight: 50
+  gnss:
+    latitude:
+      name: "Vĩ độ"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 10
+    longitude:
+      name: "Kinh độ"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 20
+    altitude:
+      name: "Độ cao"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 30
+    speed:
+      name: "Tốc độ GPS"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 40
+    satellites:
+      name: "Vệ tinh"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 50
+    fix:
+      name: "Trạng thái GPS"
+      web_server:
+        sorting_group_id: group_gnss
+        sorting_weight: 60
 
 api:
 
@@ -107,6 +153,9 @@ web_server:
     - id: group_ec20
       name: "EC20 / SIM"
       sorting_weight: 20
+    - id: group_gnss
+      name: "GNSS"
+      sorting_weight: 25
     - id: group_wifi
       name: "WiFi"
       sorting_weight: 30

@@ -5,6 +5,8 @@
 #include <usb/usb_host.h>
 
 #include <cerrno>
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <netinet/tcp.h>
@@ -14,6 +16,51 @@ namespace esphome::ec20 {
 static const char *const TAG = "ec20";
 static constexpr uint16_t EC20_VID = 0x2C7C;
 static constexpr uint16_t EC20_PID = 0x0125;
+static constexpr uint8_t EC20_NMEA_INTERFACE = 1;
+
+static std::vector<std::string> split_nmea_fields(const std::string &line) {
+  std::vector<std::string> fields;
+  size_t start = 0;
+  while (true) {
+    const size_t comma = line.find(',', start);
+    if (comma == std::string::npos) {
+      fields.push_back(line.substr(start));
+      break;
+    }
+    fields.push_back(line.substr(start, comma - start));
+    start = comma + 1;
+  }
+  if (!fields.empty()) {
+    const size_t star = fields.back().find('*');
+    if (star != std::string::npos) {
+      fields.back().resize(star);
+    }
+  }
+  return fields;
+}
+
+static bool parse_nmea_float(const std::string &text, float &value) {
+  if (text.empty()) {
+    return false;
+  }
+  char *end = nullptr;
+  value = std::strtof(text.c_str(), &end);
+  return end != text.c_str();
+}
+
+static bool parse_nmea_coord(const std::string &raw, const std::string &hemisphere, float &value) {
+  float packed = 0.0f;
+  if (!parse_nmea_float(raw, packed)) {
+    return false;
+  }
+  const int degrees = static_cast<int>(packed / 100.0f);
+  const float minutes = packed - static_cast<float>(degrees) * 100.0f;
+  value = static_cast<float>(degrees) + minutes / 60.0f;
+  if (hemisphere == "S" || hemisphere == "W") {
+    value = -value;
+  }
+  return true;
+}
 
 void EC20Component::setup() {
   usb_host_config_t host_config = {};
@@ -46,6 +93,19 @@ void EC20Component::loop() {
   this->ensure_listener_();
   if (this->disconnected_ && this->client_fd_ >= 0) {
     this->close_client_();
+  }
+  if (this->nmea_disconnected_) {
+    this->nmea_disconnected_ = false;
+    this->close_nmea_();
+  }
+  this->ensure_nmea_port_();
+  std::string nmea_data;
+  {
+    std::lock_guard<std::mutex> lock(this->nmea_mutex_);
+    nmea_data.swap(this->nmea_rx_buffer_);
+  }
+  if (!nmea_data.empty()) {
+    this->feed_nmea_(reinterpret_cast<const uint8_t *>(nmea_data.data()), nmea_data.size());
   }
   this->handle_tcp_();
 
@@ -126,6 +186,20 @@ void EC20Component::task_loop_() {
         vTaskDelay(pdMS_TO_TICKS(500));
       } else {
         this->keepalive_failures_ = 0;
+        this->at_ready_ = true;
+        if (!this->gps_init_attempted_) {
+          this->gps_init_attempted_ = true;
+          if (!this->tcp_active_) {
+            ESP_LOGI(TAG, "Enabling EC20 GNSS");
+            const uint8_t gps_on[] = {'A', 'T', '+', 'Q', 'G', 'P', 'S', '=', '1', '\r', '\n'};
+            this->send_raw_(gps_on, sizeof(gps_on));
+            vTaskDelay(pdMS_TO_TICKS(300));
+            if (!this->tcp_active_) {
+              std::lock_guard<std::mutex> lock(this->rx_mutex_);
+              this->rx_buffer_.clear();
+            }
+          }
+        }
       }
     } else {
       const uint32_t now = millis();
@@ -171,17 +245,76 @@ bool EC20Component::open_device_() {
                                                           &this->handle_);
   if (err != ESP_OK) {
     this->handle_ = nullptr;
+    ESP_LOGD(TAG, "Open EC20 interface %u failed: %s", interface, esp_err_to_name(err));
     return false;
   }
 
   ESP_LOGI(TAG, "Opened EC20 interface %u", interface);
+  if (this->ever_opened_) {
+    this->reconnect_count_++;
+  }
+  this->ever_opened_ = true;
+  if (this->reconnects_ != nullptr) {
+    this->reconnects_->publish_state(this->reconnect_count_);
+  }
+  if (this->usb_connected_ != nullptr) {
+    this->usb_connected_->publish_state(true);
+  }
   return true;
 }
 
 void EC20Component::close_device_() {
+  this->at_ready_ = false;
+  this->close_nmea_();
   if (this->handle_ != nullptr) {
     cdc_acm_host_close(this->handle_);
     this->handle_ = nullptr;
+  }
+  if (this->usb_connected_ != nullptr) {
+    this->usb_connected_->publish_state(false);
+  }
+}
+
+void EC20Component::ensure_nmea_port_() {
+  if (!this->at_ready_ || this->nmea_handle_ != nullptr) {
+    return;
+  }
+  const uint32_t now = millis();
+  if (now < this->nmea_retry_at_) {
+    return;
+  }
+  this->nmea_retry_at_ = now + 5000;
+
+  cdc_acm_host_device_config_t dev_config = {};
+  dev_config.connection_timeout_ms = 500;
+  dev_config.out_buffer_size = 256;
+  dev_config.in_buffer_size = 512;
+  dev_config.event_cb = nmea_event_cb_;
+  dev_config.data_cb = nmea_data_cb_;
+  dev_config.user_arg = this;
+
+  const esp_err_t err = cdc_acm_host_open_vendor_specific(EC20_VID, EC20_PID, EC20_NMEA_INTERFACE, &dev_config,
+                                                          &this->nmea_handle_);
+  if (err != ESP_OK) {
+    this->nmea_handle_ = nullptr;
+    ESP_LOGD(TAG, "NMEA interface %u not ready: %s", EC20_NMEA_INTERFACE, esp_err_to_name(err));
+    return;
+  }
+
+  cdc_acm_line_coding_t line_coding = {};
+  line_coding.dwDTERate = 115200;
+  line_coding.bCharFormat = 0;
+  line_coding.bParityType = 0;
+  line_coding.bDataBits = 8;
+  cdc_acm_host_line_coding_set(this->nmea_handle_, &line_coding);
+  cdc_acm_host_set_control_line_state(this->nmea_handle_, true, true);
+  ESP_LOGI(TAG, "Opened EC20 NMEA interface %u", EC20_NMEA_INTERFACE);
+}
+
+void EC20Component::close_nmea_() {
+  if (this->nmea_handle_ != nullptr) {
+    cdc_acm_host_close(this->nmea_handle_);
+    this->nmea_handle_ = nullptr;
   }
 }
 
@@ -283,6 +416,146 @@ bool EC20Component::data_cb_(const uint8_t *data, size_t len, void *arg) {
   return true;
 }
 
+bool EC20Component::nmea_data_cb_(const uint8_t *data, size_t len, void *arg) {
+  auto *self = static_cast<EC20Component *>(arg);
+  std::lock_guard<std::mutex> lock(self->nmea_mutex_);
+  if (self->nmea_rx_buffer_.size() + len > 4096) {
+    return true;
+  }
+  self->nmea_rx_buffer_.append(reinterpret_cast<const char *>(data), len);
+  return true;
+}
+
+void EC20Component::feed_nmea_(const uint8_t *data, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    const char c = static_cast<char>(data[i]);
+    if (c == '\n') {
+      if (this->nmea_buffer_.size() >= 7 && this->nmea_buffer_[0] == '$') {
+        this->parse_nmea_(this->nmea_buffer_);
+      }
+      this->nmea_buffer_.clear();
+    } else if (c != '\r') {
+      if (this->nmea_buffer_.size() < 120) {
+        this->nmea_buffer_.push_back(c);
+      } else {
+        this->nmea_buffer_.clear();
+      }
+    }
+  }
+}
+
+void EC20Component::publish_gnss_fix_(const std::string &fix) {
+  if (this->gnss_fix_text_ == fix) {
+    return;
+  }
+  this->gnss_fix_text_ = fix;
+  if (this->gnss_fix_ != nullptr) {
+    this->gnss_fix_->publish_state(fix);
+  }
+}
+
+void EC20Component::clear_gnss_() {
+  if (this->gnss_has_fix_) {
+    this->gnss_has_fix_ = false;
+    if (this->gnss_latitude_ != nullptr) {
+      this->gnss_latitude_->publish_state(NAN);
+    }
+    if (this->gnss_longitude_ != nullptr) {
+      this->gnss_longitude_->publish_state(NAN);
+    }
+    if (this->gnss_altitude_ != nullptr) {
+      this->gnss_altitude_->publish_state(NAN);
+    }
+    if (this->gnss_speed_ != nullptr) {
+      this->gnss_speed_->publish_state(NAN);
+    }
+  }
+  this->publish_gnss_fix_("Không có fix");
+}
+
+void EC20Component::parse_nmea_(const std::string &line) {
+  const std::vector<std::string> fields = split_nmea_fields(line);
+  if (fields.size() < 3 || fields[0].size() < 6) {
+    return;
+  }
+  const std::string kind = fields[0].substr(3, 3);
+
+  if (kind == "GGA") {
+    if (fields.size() < 10) {
+      return;
+    }
+    int quality = 0;
+    if (!fields[6].empty()) {
+      quality = std::atoi(fields[6].c_str());
+    }
+    float satellites = 0.0f;
+    if (parse_nmea_float(fields[7], satellites) && this->gnss_satellites_ != nullptr) {
+      this->gnss_satellites_->publish_state(satellites);
+    }
+    float latitude = 0.0f;
+    float longitude = 0.0f;
+    if (quality > 0 && parse_nmea_coord(fields[2], fields[3], latitude) &&
+        parse_nmea_coord(fields[4], fields[5], longitude)) {
+      this->gnss_has_fix_ = true;
+      if (this->gnss_latitude_ != nullptr) {
+        this->gnss_latitude_->publish_state(latitude);
+      }
+      if (this->gnss_longitude_ != nullptr) {
+        this->gnss_longitude_->publish_state(longitude);
+      }
+      float altitude = 0.0f;
+      if (parse_nmea_float(fields[9], altitude) && this->gnss_altitude_ != nullptr) {
+        this->gnss_altitude_->publish_state(altitude);
+      }
+      const char *fix = "GPS";
+      if (quality == 2) {
+        fix = "DGPS";
+      } else if (quality == 4) {
+        fix = "RTK";
+      } else if (quality == 5) {
+        fix = "RTK float";
+      }
+      this->publish_gnss_fix_(fix);
+    } else {
+      if (this->gnss_satellites_ != nullptr && fields[7].empty()) {
+        this->gnss_satellites_->publish_state(0);
+      }
+      this->clear_gnss_();
+    }
+    return;
+  }
+
+  if (kind == "RMC") {
+    if (fields.size() < 8) {
+      return;
+    }
+    if (fields[2] == "A") {
+      float latitude = 0.0f;
+      float longitude = 0.0f;
+      if (!parse_nmea_coord(fields[3], fields[4], latitude) ||
+          !parse_nmea_coord(fields[5], fields[6], longitude)) {
+        return;
+      }
+      this->gnss_has_fix_ = true;
+      if (this->gnss_latitude_ != nullptr) {
+        this->gnss_latitude_->publish_state(latitude);
+      }
+      if (this->gnss_longitude_ != nullptr) {
+        this->gnss_longitude_->publish_state(longitude);
+      }
+      float knots = 0.0f;
+      if (parse_nmea_float(fields[7], knots) && this->gnss_speed_ != nullptr) {
+        this->gnss_speed_->publish_state(knots * 1.852f);
+      }
+      if (this->gnss_fix_text_.empty() || this->gnss_fix_text_ == "Không có fix") {
+        this->publish_gnss_fix_("GPS");
+      }
+    } else if (fields[2] == "V") {
+      this->clear_gnss_();
+    }
+  }
+}
+
 void EC20Component::ensure_listener_() {
   if (this->listen_fd_ >= 0) {
     return;
@@ -325,6 +598,9 @@ void EC20Component::close_client_() {
     this->client_fd_ = -1;
   }
   this->tcp_active_ = false;
+  if (this->tcp_connected_ != nullptr) {
+    this->tcp_connected_->publish_state(false);
+  }
   {
     std::lock_guard<std::mutex> lock(this->rx_mutex_);
     this->rx_buffer_.clear();
@@ -350,6 +626,9 @@ void EC20Component::handle_tcp_() {
       char peer_ip[32] = {};
       inet_ntoa_r(peer.sin_addr, peer_ip, sizeof(peer_ip));
       ESP_LOGI(TAG, "TCP client connected from %s:%u", peer_ip, ntohs(peer.sin_port));
+      if (this->tcp_connected_ != nullptr) {
+        this->tcp_connected_->publish_state(true);
+      }
     }
   }
 
@@ -410,6 +689,13 @@ void EC20Component::event_cb_(const cdc_acm_host_dev_event_data_t *event, void *
       break;
     default:
       break;
+  }
+}
+
+void EC20Component::nmea_event_cb_(const cdc_acm_host_dev_event_data_t *event, void *arg) {
+  auto *self = static_cast<EC20Component *>(arg);
+  if (event->type == CDC_ACM_HOST_DEVICE_DISCONNECTED) {
+    self->nmea_disconnected_ = true;
   }
 }
 
