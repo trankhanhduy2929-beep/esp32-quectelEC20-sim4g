@@ -130,6 +130,8 @@ Vào nhóm **WiFi** trên web UI:
 - Xem **WiFi xung quanh** để chọn mạng; nhấn một mạng để điền SSID, nhập mật khẩu rồi bấm **Kết nối WiFi**.
 - Bấm **Quét WiFi** để cập nhật danh sách. Trong AP mode danh sách có thể trống; vẫn có thể nhập SSID thủ công.
 - Thiết bị lưu WiFi vào NVS và tự kết nối lại sau reboot/OTA. Firmware dùng DHCP, không cấu hình IP tĩnh.
+- Khi mất WiFi, ESPHome tự thử lại liên tục; nếu mất hơn 15 phút, watchdog tự reboot để reset WiFi. Khi mạng có lại, thiết bị tự vào lại LAN/HA mà không cần thao tác.
+- Thông báo TTS IP chỉ phát lần đầu sau mỗi lần boot, tránh lặp khi WiFi chập chờn.
 - Muốn xoá WiFi đã lưu, bấm **Xóa WiFi và khởi động lại**; thiết bị sẽ phát AP lại sau 120 giây nếu không kết nối được.
 
 > Nếu AP không hiện, giữ nút **BOOT** 5 giây để factory reset rồi thử lại.
@@ -139,7 +141,7 @@ Vào nhóm **WiFi** trên web UI:
 1. Settings → Devices & Services → Add Integration → **ESPHome**.
 2. Nhập IP thiết bị (hoặc để tự phát hiện).
 3. Các entity có sẵn: media player, WiFi signal, uptime, IP/SSID/MAC, các nút WiFi/restart, **EC20 Test AT**, text sensor **EC20 AT Response**.
-4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**; v0.1.10 bổ sung quét/chọn WiFi trên web UI.
+4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**; v0.1.10 bổ sung quét/chọn WiFi trên web UI; v0.1.11 thêm watchdog tự phục hồi WiFi.
 5. GNSS cần anten GPS gắn vào EC20; không có anten sẽ báo `0` vệ tinh và `Không có fix`.
 
 ## Bảo mật

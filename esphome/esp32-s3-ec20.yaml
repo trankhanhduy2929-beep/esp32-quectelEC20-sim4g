@@ -6,7 +6,7 @@ substitutions:
   ap_password: "12345678"
   tts_entity: tts.edge_tts
   tts_media_player: media_player.esp32_s3_speaker_loa_esp32_s3
-  firmware_version: "0.1.10"
+  firmware_version: "0.1.11"
   ec20_power_pin: GPIO18
 
 esphome:
@@ -14,6 +14,16 @@ esphome:
   friendly_name: ${friendly_name}
   includes:
     - <esp_wifi.h>
+
+globals:
+  - id: wifi_announced
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  - id: wifi_offline_since
+    type: uint32_t
+    restore_value: false
+    initial_value: "0"
 
 external_components:
   - source:
@@ -110,7 +120,41 @@ wifi:
     ap_timeout: 120s
     channel: 6
   on_connect:
-    - script.execute: announce_wifi
+    - if:
+        condition:
+          lambda: 'return !id(wifi_announced);'
+        then:
+          - lambda: 'id(wifi_announced) = true;'
+          - script.execute: announce_wifi
+  on_disconnect:
+    - logger.log: "WiFi lost; auto-reconnect active"
+
+interval:
+  - interval: 60s
+    then:
+      - lambda: |-
+          if (id(wifi_id).is_connected()) {
+            if (id(wifi_offline_since) != 0) {
+              id(wifi_offline_since) = 0;
+              ESP_LOGI("wifi_watchdog", "WiFi reconnected");
+            }
+            return;
+          }
+          if (!id(wifi_id).has_sta()) {
+            id(wifi_offline_since) = 0;
+            return;
+          }
+          const uint32_t now = millis();
+          if (id(wifi_offline_since) == 0) {
+            id(wifi_offline_since) = now;
+            ESP_LOGW("wifi_watchdog", "WiFi offline; waiting for automatic reconnect");
+            return;
+          }
+          if (now - id(wifi_offline_since) >= 15UL * 60UL * 1000UL) {
+            ESP_LOGE("wifi_watchdog", "WiFi offline >15 min; rebooting to reset WiFi");
+            id(wifi_offline_since) = 0;
+            App.reboot();
+          }
 
 script:
   - id: announce_wifi
