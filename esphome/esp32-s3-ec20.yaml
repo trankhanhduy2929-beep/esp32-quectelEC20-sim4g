@@ -11,6 +11,7 @@ substitutions:
   subnet: "255.255.255.0"
   dns1: "116.97.90.124"
   dns2: "116.97.90.127"
+  firmware_version: "0.1.6"
 
 esphome:
   name: ${device_name}
@@ -43,6 +44,10 @@ ec20:
   at_response:
     name: "EC20 AT Response"
     id: ec20_at_response
+    icon: mdi:sim
+    web_server:
+      sorting_group_id: group_ec20
+      sorting_weight: 10
 
 api:
 
@@ -93,16 +98,21 @@ captive_portal:
 web_server:
   port: 80
   version: 3
+  css_include: ui/esp-ui.css
+  js_include: ui/esp-ui.js
   sorting_groups:
-    - id: group_wifi
-      name: "WiFi"
-      sorting_weight: 10
     - id: group_info
       name: "Thông tin"
+      sorting_weight: 10
+    - id: group_ec20
+      name: "EC20 / SIM"
       sorting_weight: 20
+    - id: group_wifi
+      name: "WiFi"
+      sorting_weight: 30
     - id: group_system
       name: "Hệ thống"
-      sorting_weight: 30
+      sorting_weight: 40
 
 esp32_ble_tracker:
   scan_parameters:
@@ -159,22 +169,26 @@ text:
   - platform: template
     name: "WiFi SSID"
     id: wifi_ssid
+    icon: mdi:wifi-cog
     optimistic: true
     restore_value: true
     mode: text
     max_length: 32
     web_server:
       sorting_group_id: group_wifi
+      sorting_weight: 20
 
   - platform: template
     name: "WiFi Password"
     id: wifi_password
+    icon: mdi:key-variant
     optimistic: true
     restore_value: false
     mode: password
     max_length: 64
     web_server:
       sorting_group_id: group_wifi
+      sorting_weight: 30
 
 button:
   - platform: template
@@ -183,6 +197,7 @@ button:
     icon: mdi:wifi
     web_server:
       sorting_group_id: group_wifi
+      sorting_weight: 40
     on_press:
       - wifi.configure:
           ssid: !lambda 'return id(wifi_ssid).state;'
@@ -199,18 +214,21 @@ button:
     id: wifi_reset_button
     web_server:
       sorting_group_id: group_wifi
+      sorting_weight: 90
 
   - platform: restart
     name: "Khởi động lại"
     web_server:
       sorting_group_id: group_system
+      sorting_weight: 90
 
   - platform: template
     name: "EC20 Test AT"
     id: ec20_test_at
-    icon: mdi:sim
+    icon: mdi:console
     web_server:
-      sorting_group_id: group_system
+      sorting_group_id: group_ec20
+      sorting_weight: 20
     on_press:
       - lambda: 'id(ec20_modem).test_at();'
 
@@ -233,43 +251,103 @@ binary_sensor:
           - logger.log: "BOOT held 5s: factory reset"
           - button.press: wifi_reset_button
 
+debug:
+  update_interval: 60s
+
 sensor:
   - platform: wifi_signal
     name: "WiFi Signal"
+    icon: mdi:wifi
     update_interval: 60s
     web_server:
-      sorting_group_id: group_info
+      sorting_group_id: group_wifi
+      sorting_weight: 10
 
   - platform: uptime
     name: "Uptime"
+    icon: mdi:timer-outline
     web_server:
       sorting_group_id: group_info
+      sorting_weight: 20
+
+  - platform: debug
+    free:
+      name: "Bộ nhớ trống"
+      icon: mdi:memory
+      unit_of_measurement: "kB"
+      accuracy_decimals: 1
+      filters:
+        - multiply: 0.0009765625
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 10
+    block:
+      name: "Bộ nhớ block lớn nhất"
+      icon: mdi:memory
+      unit_of_measurement: "kB"
+      accuracy_decimals: 1
+      filters:
+        - multiply: 0.0009765625
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 20
+
+  - platform: internal_temperature
+    name: "Nhiệt độ chip"
+    icon: mdi:thermometer
+    update_interval: 60s
+    web_server:
+      sorting_group_id: group_system
+      sorting_weight: 30
 
 text_sensor:
   - platform: wifi_info
     ip_address:
       name: "IP"
       id: wifi_ip
+      icon: mdi:ip-network
       web_server:
         sorting_group_id: group_info
+        sorting_weight: 10
     ssid:
       name: "SSID"
+      icon: mdi:wifi
       web_server:
         sorting_group_id: group_info
+        sorting_weight: 30
     bssid:
       name: "BSSID"
+      icon: mdi:access-point-network
       web_server:
         sorting_group_id: group_info
+        sorting_weight: 40
     mac_address:
       name: "MAC"
+      icon: mdi:identifier
       web_server:
         sorting_group_id: group_info
+        sorting_weight: 50
     dns_address:
       name: "DNS"
+      icon: mdi:dns
       web_server:
         sorting_group_id: group_info
+        sorting_weight: 60
 
   - platform: version
     name: "ESPHome Version"
+    icon: mdi:package-variant
     web_server:
       sorting_group_id: group_info
+      sorting_weight: 90
+
+  - platform: template
+    name: "Firmware Version"
+    id: firmware_version
+    icon: mdi:chip
+    update_interval: 60s
+    lambda: |-
+      return std::string("v${firmware_version}");
+    web_server:
+      sorting_group_id: group_info
+      sorting_weight: 1

@@ -70,7 +70,15 @@ void EC20Component::dump_config() {
   ESP_LOGCONFIG(TAG, "  Device open: %s", YESNO(this->handle_ != nullptr));
 }
 
-void EC20Component::test_at() { this->force_at_ = true; }
+void EC20Component::test_at() {
+  if (this->tcp_active_) {
+    if (this->at_response_sensor_ != nullptr) {
+      this->at_response_sensor_->publish_state("Add-on đang giữ kết nối TCP");
+    }
+    return;
+  }
+  this->force_at_ = true;
+}
 
 void EC20Component::task_fn(void *arg) { static_cast<EC20Component *>(arg)->task_loop_(); }
 
