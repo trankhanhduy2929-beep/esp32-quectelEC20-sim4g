@@ -6,17 +6,14 @@ substitutions:
   ap_password: "12345678"
   tts_entity: tts.edge_tts
   tts_media_player: media_player.esp32_s3_speaker_loa_esp32_s3
-  static_ip: "192.168.1.64"
-  gateway: "192.168.1.1"
-  subnet: "255.255.255.0"
-  dns1: "116.97.90.124"
-  dns2: "116.97.90.127"
-  firmware_version: "0.1.9"
+  firmware_version: "0.1.10"
   ec20_power_pin: GPIO18
 
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
+  includes:
+    - <esp_wifi.h>
 
 external_components:
   - source:
@@ -103,16 +100,14 @@ api:
 ota:
   - platform: esphome
 
-# IP tĩnh (tắt DHCP): comment CẢ 2 dòng packages dưới đây rồi build/OTA để quay lại DHCP.
-# packages:
-#   static_ip: !include packages/static-ip.yaml
+# WiFi dùng DHCP mặc định, không cấu hình manual_ip.
 
 wifi:
   id: wifi_id
   ap:
     ssid: "${ap_ssid}"
     password: "${ap_password}"
-    ap_timeout: 30s
+    ap_timeout: 120s
     channel: 6
   on_connect:
     - script.execute: announce_wifi
@@ -243,6 +238,26 @@ text:
       sorting_weight: 30
 
 button:
+  - platform: template
+    name: "Quét WiFi"
+    id: wifi_scan_button
+    icon: mdi:wifi-sync
+    web_server:
+      sorting_group_id: group_wifi
+      sorting_weight: 15
+    on_press:
+      - lambda: |-
+          wifi_scan_config_t scan_config{};
+          scan_config.show_hidden = true;
+          scan_config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+          scan_config.scan_time.active.min = 100;
+          scan_config.scan_time.active.max = 300;
+          scan_config.coex_background_scan = true;
+          esp_err_t err = esp_wifi_scan_start(&scan_config, false);
+          if (err != ESP_OK) {
+            ESP_LOGW("wifi_scan", "Khong bat dau duoc quet WiFi: %s", esp_err_to_name(err));
+          }
+
   - platform: template
     name: "Kết nối WiFi"
     id: wifi_connect_button
@@ -406,6 +421,13 @@ text_sensor:
       web_server:
         sorting_group_id: group_info
         sorting_weight: 60
+    scan_results:
+      name: "WiFi xung quanh"
+      id: wifi_scan_results
+      icon: mdi:wifi-sync
+      web_server:
+        sorting_group_id: group_wifi
+        sorting_weight: 5
 
   - platform: version
     name: "ESPHome Version"

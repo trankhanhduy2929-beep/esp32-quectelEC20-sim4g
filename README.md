@@ -112,7 +112,7 @@ esptool.py --chip esp32s3 --port COM6 write_flash 0x0 \
 Sau khi thiết bị vào WiFi, dùng IP thực tế:
 
 ```bash
-esphome run esp32-s3-ec20.yaml --device 192.168.1.64
+esphome run esp32-s3-ec20.yaml --device 192.168.1.97
 ```
 
 Hoặc vào web UI của thiết bị, mục **OTA/Update**, hoặc dùng ESPHome dashboard.
@@ -125,7 +125,12 @@ Nếu chưa có WiFi đã lưu, thiết bị phát AP:
 - Password: `12345678`
 - Web UI: `http://192.168.4.1`
 
-Vào **WiFi**, nhập SSID/password nhà, bấm **Kết nối WiFi**. Thiết bị lưu vào NVS và tự kết nối. Sau khi có IP, có thể OTA.
+Vào nhóm **WiFi** trên web UI:
+
+- Xem **WiFi xung quanh** để chọn mạng; nhấn một mạng để điền SSID, nhập mật khẩu rồi bấm **Kết nối WiFi**.
+- Bấm **Quét WiFi** để cập nhật danh sách. Trong AP mode danh sách có thể trống; vẫn có thể nhập SSID thủ công.
+- Thiết bị lưu WiFi vào NVS và tự kết nối lại sau reboot/OTA. Firmware dùng DHCP, không cấu hình IP tĩnh.
+- Muốn xoá WiFi đã lưu, bấm **Xóa WiFi và khởi động lại**; thiết bị sẽ phát AP lại sau 120 giây nếu không kết nối được.
 
 > Nếu AP không hiện, giữ nút **BOOT** 5 giây để factory reset rồi thử lại.
 
@@ -134,12 +139,12 @@ Vào **WiFi**, nhập SSID/password nhà, bấm **Kết nối WiFi**. Thiết b�
 1. Settings → Devices & Services → Add Integration → **ESPHome**.
 2. Nhập IP thiết bị (hoặc để tự phát hiện).
 3. Các entity có sẵn: media player, WiFi signal, uptime, IP/SSID/MAC, các nút WiFi/restart, **EC20 Test AT**, text sensor **EC20 AT Response**.
-4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**.
+4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**; v0.1.10 bổ sung quét/chọn WiFi trên web UI.
 5. GNSS cần anten GPS gắn vào EC20; không có anten sẽ báo `0` vệ tinh và `Không có fix`.
 
 ## Bảo mật
 
-Firmware v0.1.9 bật Noise encryption cho API; web UI không còn yêu cầu user/password, chỉ nên dùng trong LAN tin cậy. Khóa API nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
+Từ firmware v0.1.9, API dùng Noise encryption; web UI không còn yêu cầu user/password, chỉ nên dùng trong LAN tin cậy. Khóa API nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
 
 ```yaml
 api_encryption_key: "<32-byte base64>"
