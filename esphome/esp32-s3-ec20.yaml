@@ -11,7 +11,8 @@ substitutions:
   subnet: "255.255.255.0"
   dns1: "116.97.90.124"
   dns2: "116.97.90.127"
-  firmware_version: "0.1.7"
+  firmware_version: "0.1.8"
+  ec20_power_pin: GPIO18
 
 esphome:
   name: ${device_name}
@@ -96,6 +97,8 @@ ec20:
         sorting_weight: 60
 
 api:
+  encryption:
+    key: !secret api_encryption_key
 
 ota:
   - platform: esphome
@@ -144,6 +147,10 @@ captive_portal:
 web_server:
   port: 80
   version: 3
+  auth:
+    type: digest
+    username: !secret web_server_username
+    password: !secret web_server_password
   css_include: ui/esp-ui.css
   js_include: ui/esp-ui.js
   sorting_groups:
@@ -272,6 +279,19 @@ button:
       sorting_weight: 90
 
   - platform: template
+    name: "Reset EC20"
+    id: ec20_reset_button
+    icon: mdi:restart-alert
+    web_server:
+      sorting_group_id: group_ec20
+      sorting_weight: 10
+    on_press:
+      - logger.log: "Resetting EC20 power"
+      - switch.turn_off: ec20_power_switch
+      - delay: 5s
+      - switch.turn_on: ec20_power_switch
+
+  - platform: template
     name: "EC20 Test AT"
     id: ec20_test_at
     icon: mdi:console
@@ -280,6 +300,14 @@ button:
       sorting_weight: 20
     on_press:
       - lambda: 'id(ec20_modem).test_at();'
+
+switch:
+  - platform: gpio
+    id: ec20_power_switch
+    name: "Nguồn EC20"
+    pin: ${ec20_power_pin}
+    restore_mode: ALWAYS_ON
+    internal: true
 
 binary_sensor:
   - platform: gpio

@@ -134,6 +134,30 @@ Vào **WiFi**, nhập SSID/password nhà, bấm **Kết nối WiFi**. Thiết b�
 1. Settings → Devices & Services → Add Integration → **ESPHome**.
 2. Nhập IP thiết bị (hoặc để tự phát hiện).
 3. Các entity có sẵn: media player, WiFi signal, uptime, IP/SSID/MAC, các nút WiFi/restart, **EC20 Test AT**, text sensor **EC20 AT Response**.
+4. Firmware v0.1.8 bổ sung nhóm **GNSS** (vĩ độ, kinh độ, độ cao, tốc độ, vệ tinh, trạng thái fix), modem health (**EC20 USB**, **Cầu TCP**, **Mở lại modem**) và nút **Reset EC20**.
+5. GNSS cần anten GPS gắn vào EC20; không có anten sẽ báo `0` vệ tinh và `Không có fix`.
+
+## Bảo mật
+
+Firmware v0.1.8 bật HTTP Digest auth cho web UI và Noise encryption cho API. Khóa/mật khẩu nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
+
+```yaml
+api_encryption_key: "<32-byte base64>"
+web_server_username: "admin"
+web_server_password: "<mật khẩu mạnh>"
+```
+
+Khi đổi `api_encryption_key`, phải vào Home Assistant → ESPHome → **Reconfigure** và nhập khóa mới.
+
+## Reset EC20 từ xa (tùy chọn)
+
+Nút **Reset EC20** điều khiển GPIO18 để cắt nguồn 5V của EC20 trong 5 giây rồi cấp lại:
+
+- Dùng MOSFET logic-level hoặc module relay chịu được dòng 5V/2A của EC20.
+- Nối GPIO18 → chân điều khiển MOSFET/relay, GND ESP32 nối chung với GND nguồn EC20.
+- Không cấp nguồn EC20 trực tiếp từ GPIO.
+- Mặc định logic active-high, switch nguồn ở trạng thái ON khi khởi động.
+- Phần cứng này chưa được kiểm thử; cần đo dòng và kiểm tra cách ly trước khi dùng.
 
 ## Calling Messenger Hub (TCP 9000)
 
