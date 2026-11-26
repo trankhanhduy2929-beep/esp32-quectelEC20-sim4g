@@ -139,12 +139,10 @@ Vào **WiFi**, nhập SSID/password nhà, bấm **Kết nối WiFi**. Thiết b�
 
 ## Bảo mật
 
-Firmware v0.1.8 bật HTTP Digest auth cho web UI và Noise encryption cho API. Khóa/mật khẩu nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
+Firmware v0.1.9 bật Noise encryption cho API; web UI không còn yêu cầu user/password, chỉ nên dùng trong LAN tin cậy. Khóa API nằm trong `esphome/secrets.yaml` (đã gitignore), không commit lên repo:
 
 ```yaml
 api_encryption_key: "<32-byte base64>"
-web_server_username: "admin"
-web_server_password: "<mật khẩu mạnh>"
 ```
 
 Khi đổi `api_encryption_key`, phải vào Home Assistant → ESPHome → **Reconfigure** và nhập khóa mới.

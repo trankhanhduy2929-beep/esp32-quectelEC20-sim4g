@@ -11,7 +11,7 @@ substitutions:
   subnet: "255.255.255.0"
   dns1: "116.97.90.124"
   dns2: "116.97.90.127"
-  firmware_version: "0.1.8"
+  firmware_version: "0.1.9"
   ec20_power_pin: GPIO18
 
 esphome:
@@ -147,10 +147,6 @@ captive_portal:
 web_server:
   port: 80
   version: 3
-  auth:
-    type: digest
-    username: !secret web_server_username
-    password: !secret web_server_password
   css_include: ui/esp-ui.css
   js_include: ui/esp-ui.js
   sorting_groups:
