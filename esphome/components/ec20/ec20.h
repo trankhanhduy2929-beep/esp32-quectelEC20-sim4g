@@ -36,6 +36,9 @@ class EC20Component : public Component {
   void set_usb_connected_sensor(binary_sensor::BinarySensor *sensor) { this->usb_connected_ = sensor; }
   void set_tcp_connected_sensor(binary_sensor::BinarySensor *sensor) { this->tcp_connected_ = sensor; }
   void set_reconnect_sensor(sensor::Sensor *sensor) { this->reconnects_ = sensor; }
+  void set_at_ready_sensor(binary_sensor::BinarySensor *sensor) { this->at_ready_sensor_ = sensor; }
+  void set_at_failures_sensor(sensor::Sensor *sensor) { this->at_failures_sensor_ = sensor; }
+  void set_last_error_sensor(text_sensor::TextSensor *sensor) { this->last_error_sensor_ = sensor; }
   void set_port(uint16_t port) { this->port_ = port; }
   void test_at();
 
@@ -58,6 +61,10 @@ class EC20Component : public Component {
   void parse_nmea_(const std::string &line);
   void publish_gnss_fix_(const std::string &fix);
   void clear_gnss_();
+  void publish_at_ready_(bool ready);
+  void note_at_failure_(const std::string &error);
+  void note_at_success_();
+  void publish_last_error_(const std::string &error);
 
   static bool data_cb_(const uint8_t *data, size_t len, void *arg);
   static bool nmea_data_cb_(const uint8_t *data, size_t len, void *arg);
@@ -76,6 +83,9 @@ class EC20Component : public Component {
   binary_sensor::BinarySensor *usb_connected_{nullptr};
   binary_sensor::BinarySensor *tcp_connected_{nullptr};
   sensor::Sensor *reconnects_{nullptr};
+  binary_sensor::BinarySensor *at_ready_sensor_{nullptr};
+  sensor::Sensor *at_failures_sensor_{nullptr};
+  text_sensor::TextSensor *last_error_sensor_{nullptr};
   TaskHandle_t task_handle_{nullptr};
 
   std::atomic<bool> force_at_{false};
@@ -91,6 +101,8 @@ class EC20Component : public Component {
 
   uint32_t last_at_{0};
   int keepalive_failures_{0};
+  uint32_t at_failures_{0};
+  std::string last_error_text_;
   std::vector<uint8_t> at_interfaces_{2, 3, 0, 1, 4};
   size_t at_index_{0};
   uint16_t port_{9000};

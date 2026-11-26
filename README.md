@@ -7,6 +7,7 @@ Cầu nối **USB CDC-ACM → TCP serial** cho module **Quectel EC20/EC2x** trê
 - Gửi AT kết thúc bằng `\r\n`.
 - TCP bridge thô tại cổng **9000**, để add-on Calling Messenger Hub dùng `transport: tcp`.
 - Có sẵn ESPHome cho ESP32-S3 N16R8, web UI, OTA, WiFi AP fallback, Bluetooth proxy, loa I2S MAX98357A và thông báo IP qua TTS (tuỳ chọn).
+- Giám sát AT/USB, lưu lỗi AT gần nhất và tự ngắt/bật nguồn EC20 qua GPIO18 sau 5 phút không khỏe (có công tắc bật/tắt và chống lặp 15 phút).
 
 ## Kiến trúc
 
@@ -30,6 +31,8 @@ Add-on **Calling Messenger Hub** gửi lệnh AT qua TCP 9000; ESP32 chuyển ng
 | Nguồn EC20 | **5V/2A**, nên dùng USB hub có nguồn; GND chung với ESP32 |
 
 > EC20 phải cắm vào **cổng USB native** của ESP32-S3 (cổng còn lại là USB UART/COM dùng để nạp firmware). EC20 có thể cần nguồn ngoài; nếu USB liên tục reset, kiểm tra nguồn trước.
+
+> Tự phục hồi nguồn cần MOSFET/relay hoặc mạch enable 5V trên GPIO18; nếu chưa có phần cứng này, tắt công tắc **Tự phục hồi EC20** trên web UI.
 
 ## Cài đặt ESPHome
 

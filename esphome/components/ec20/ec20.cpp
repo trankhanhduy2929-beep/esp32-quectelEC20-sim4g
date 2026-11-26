@@ -180,13 +180,13 @@ void EC20Component::task_loop_() {
         if (this->tcp_active_) {
           continue;
         }
+        this->note_at_failure_("Không nhận OK từ AT");
         ESP_LOGW(TAG, "No OK on interface %u, trying next", this->at_interfaces_[this->at_index_]);
         this->close_device_();
         this->at_index_ = (this->at_index_ + 1) % this->at_interfaces_.size();
         vTaskDelay(pdMS_TO_TICKS(500));
       } else {
-        this->keepalive_failures_ = 0;
-        this->at_ready_ = true;
+        this->note_at_success_();
         if (!this->gps_init_attempted_) {
           this->gps_init_attempted_ = true;
           if (!this->tcp_active_) {
@@ -212,6 +212,7 @@ void EC20Component::task_loop_() {
         }
         if (!this->response_has_ok_()) {
           this->keepalive_failures_++;
+          this->note_at_failure_("Keepalive AT không phản hồi");
           ESP_LOGW(TAG, "Idle AT keepalive failed (%d/3) on interface %u", this->keepalive_failures_,
                    this->at_interfaces_[this->at_index_]);
           if (this->keepalive_failures_ >= 3) {
@@ -219,7 +220,7 @@ void EC20Component::task_loop_() {
             this->force_at_ = true;
           }
         } else {
-          this->keepalive_failures_ = 0;
+          this->note_at_success_();
         }
         {
           std::lock_guard<std::mutex> lock(this->rx_mutex_);
@@ -264,7 +265,7 @@ bool EC20Component::open_device_() {
 }
 
 void EC20Component::close_device_() {
-  this->at_ready_ = false;
+  this->publish_at_ready_(false);
   this->close_nmea_();
   if (this->handle_ != nullptr) {
     cdc_acm_host_close(this->handle_);
@@ -383,6 +384,7 @@ void EC20Component::store_response_() {
   }
   if (response.empty()) {
     ESP_LOGW(TAG, "No response to AT");
+    this->publish_last_error_("Không có phản hồi AT");
     return;
   }
   std::string clean;
@@ -396,11 +398,52 @@ void EC20Component::store_response_() {
   if (clean.size() > 200) {
     clean.resize(200);
   }
+  if (clean.find("OK") == std::string::npos) {
+    this->publish_last_error_(clean);
+  }
   {
     std::lock_guard<std::mutex> lock(this->pending_mutex_);
     this->pending_response_ = std::move(clean);
     this->has_pending_response_ = true;
   }
+}
+
+void EC20Component::publish_at_ready_(bool ready) {
+  this->at_ready_ = ready;
+  if (this->at_ready_sensor_ != nullptr) {
+    this->at_ready_sensor_->publish_state(ready);
+  }
+}
+
+void EC20Component::publish_last_error_(const std::string &error) {
+  std::string clean = error;
+  if (clean.size() > 200) {
+    clean.resize(200);
+  }
+  if (clean.empty() || clean == this->last_error_text_) {
+    return;
+  }
+  this->last_error_text_ = std::move(clean);
+  if (this->last_error_sensor_ != nullptr) {
+    this->last_error_sensor_->publish_state(this->last_error_text_);
+  }
+}
+
+void EC20Component::note_at_failure_(const std::string &error) {
+  this->at_failures_++;
+  if (this->at_failures_sensor_ != nullptr) {
+    this->at_failures_sensor_->publish_state(static_cast<float>(this->at_failures_));
+  }
+  this->publish_last_error_(error);
+}
+
+void EC20Component::note_at_success_() {
+  this->keepalive_failures_ = 0;
+  this->at_failures_ = 0;
+  if (this->at_failures_sensor_ != nullptr) {
+    this->at_failures_sensor_->publish_state(0.0f);
+  }
+  this->publish_at_ready_(true);
 }
 
 bool EC20Component::data_cb_(const uint8_t *data, size_t len, void *arg) {

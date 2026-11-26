@@ -15,6 +15,9 @@ CONF_AT_RESPONSE = "at_response"
 CONF_USB_CONNECTED = "usb_connected"
 CONF_TCP_CONNECTED = "tcp_connected"
 CONF_RECONNECTS = "reconnects"
+CONF_AT_READY = "at_ready"
+CONF_AT_FAILURES = "at_failures"
+CONF_LAST_ERROR = "last_error"
 CONF_GNSS = "gnss"
 CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
@@ -69,6 +72,16 @@ CONFIG_SCHEMA = cv.Schema(
             accuracy_decimals=0,
             icon="mdi:restart",
         ),
+        cv.Optional(CONF_AT_READY): binary_sensor.binary_sensor_schema(
+            device_class="connectivity",
+        ),
+        cv.Optional(CONF_AT_FAILURES): sensor.sensor_schema(
+            accuracy_decimals=0,
+            icon="mdi:alert-circle-outline",
+        ),
+        cv.Optional(CONF_LAST_ERROR): text_sensor.text_sensor_schema(
+            icon="mdi:alert",
+        ),
         cv.Optional(CONF_GNSS): GNSS_SCHEMA,
         cv.Optional(CONF_PORT, default=9000): cv.port,
     }
@@ -98,6 +111,18 @@ async def to_code(config):
     if reconnects := config.get(CONF_RECONNECTS):
         sens = await sensor.new_sensor(reconnects)
         cg.add(var.set_reconnect_sensor(sens))
+
+    if at_ready := config.get(CONF_AT_READY):
+        sens = await binary_sensor.new_binary_sensor(at_ready)
+        cg.add(var.set_at_ready_sensor(sens))
+
+    if at_failures := config.get(CONF_AT_FAILURES):
+        sens = await sensor.new_sensor(at_failures)
+        cg.add(var.set_at_failures_sensor(sens))
+
+    if last_error := config.get(CONF_LAST_ERROR):
+        sens = await text_sensor.new_text_sensor(last_error)
+        cg.add(var.set_last_error_sensor(sens))
 
     if gnss := config.get(CONF_GNSS):
         if latitude := gnss.get(CONF_LATITUDE):
