@@ -23,6 +23,16 @@ jobs:
       - name: Install ESPHome
         run: pip install esphome==2026.10.2
 
+      - name: Prepare ESPHome secrets
+        working-directory: esphome
+        env:
+          API_ENCRYPTION_KEY: ${{ secrets.ESPHOME_API_ENCRYPTION_KEY }}
+        run: |
+          if [ -z "$API_ENCRYPTION_KEY" ]; then
+            API_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          fi
+          printf 'api_encryption_key: "%s"\n' "$API_ENCRYPTION_KEY" > secrets.yaml
+
       - name: Validate
         working-directory: esphome
         run: esphome config esp32-s3-ec20.yaml
@@ -31,6 +41,10 @@ jobs:
         working-directory: esphome
         run: esphome compile esp32-s3-ec20.yaml
 
+      - name: Checksums
+        working-directory: esphome/.esphome/build/esp32-s3-speaker/build
+        run: sha256sum firmware.factory.bin firmware.ota.bin > SHA256SUMS
+
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
@@ -38,6 +52,7 @@ jobs:
           path: |
             esphome/.esphome/build/esp32-s3-speaker/build/firmware.factory.bin
             esphome/.esphome/build/esp32-s3-speaker/build/firmware.ota.bin
+            esphome/.esphome/build/esp32-s3-speaker/build/SHA256SUMS
           if-no-files-found: error
 
       - name: Release
@@ -47,3 +62,4 @@ jobs:
           files: |
             esphome/.esphome/build/esp32-s3-speaker/build/firmware.factory.bin
             esphome/.esphome/build/esp32-s3-speaker/build/firmware.ota.bin
+            esphome/.esphome/build/esp32-s3-speaker/build/SHA256SUMS
